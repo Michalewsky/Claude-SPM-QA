@@ -1,0 +1,2 @@
+source_plan_id,source_rule_id,target_plan_id,target_rule_id,interaction_type,description
+PLAN_A,R_A1,PLAN_B,R_B1,feeds_into,PLAN_A direct credit feeds PLAN_B overlay credit attribution
