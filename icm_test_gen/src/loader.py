@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -43,6 +44,18 @@ def parse_csv_list(value: object) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
+def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Strip whitespace from keys and string values to avoid CSV drift issues."""
+    normalized: dict[str, Any] = {}
+    for key, value in row.items():
+        clean_key = str(key).strip()
+        if isinstance(value, str):
+            normalized[clean_key] = value.strip()
+        else:
+            normalized[clean_key] = value
+    return normalized
+
+
 @dataclass
 class LoadedInputs:
     plans: list[Plan]
@@ -63,31 +76,27 @@ def load_inputs(plans_csv: Path, rules_csv: Path, interactions_csv: Path, edge_c
     interactions_df = _read_csv(interactions_csv)
     edge_df = _read_csv(edge_cases_csv)
 
-    plans = [
-        Plan(
-            **row,
-            proration_enabled=parse_bool(row["proration_enabled"]),
-            draws_enabled=parse_bool(row["draws_enabled"]),
-            cap_enabled=parse_bool(row["cap_enabled"]),
-            accelerator_enabled=parse_bool(row["accelerator_enabled"]),
-            bonus_component=parse_bool(row["bonus_component"]),
-        )
-        for row in plans_df.to_dict(orient="records")
-    ]
+    plans: list[Plan] = []
+    for raw in plans_df.to_dict(orient="records"):
+        row = _normalize_row(raw)
+        row["proration_enabled"] = parse_bool(row.get("proration_enabled", ""))
+        row["draws_enabled"] = parse_bool(row.get("draws_enabled", ""))
+        row["cap_enabled"] = parse_bool(row.get("cap_enabled", ""))
+        row["accelerator_enabled"] = parse_bool(row.get("accelerator_enabled", ""))
+        row["bonus_component"] = parse_bool(row.get("bonus_component", ""))
+        plans.append(Plan(**row))
 
-    rules = [
-        Rule(
-            **row,
-            parameters=parse_kv_pipe(row["parameters"]),
-            interaction_with=parse_csv_list(row["interaction_with"]),
-            stateful=parse_bool(row["stateful"]),
-        )
-        for row in rules_df.to_dict(orient="records")
-    ]
+    rules: list[Rule] = []
+    for raw in rules_df.to_dict(orient="records"):
+        row = _normalize_row(raw)
+        row["parameters"] = parse_kv_pipe(row.get("parameters", ""))
+        row["interaction_with"] = parse_csv_list(row.get("interaction_with", ""))
+        row["stateful"] = parse_bool(row.get("stateful", ""))
+        rules.append(Rule(**row))
 
-    interactions = [RuleInteraction(**row) for row in interactions_df.to_dict(orient="records")]
+    interactions = [RuleInteraction(**_normalize_row(row)) for row in interactions_df.to_dict(orient="records")]
     edge_cases = [
-        EdgeCase(**row, applies_when=parse_kv_pipe(row["applies_when"]))
+        EdgeCase(**{**_normalize_row(row), "applies_when": parse_kv_pipe(row.get("applies_when", ""))})
         for row in edge_df.to_dict(orient="records")
     ]
 
