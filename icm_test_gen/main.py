@@ -121,6 +121,7 @@ def main(auto_answer: bool | None = None) -> int:
     raw_plans = pd.read_csv(PLANS_CSV).fillna("").to_dict(orient="records")
     raw_rules = pd.read_csv(RULES_CSV).fillna("").to_dict(orient="records")
 
+    llm_enabled = True
     print("Running pre-flight consistency check...")
     required_col_findings = validate_required_columns()
     try:
@@ -139,6 +140,7 @@ def main(auto_answer: bool | None = None) -> int:
         if not prompt_yes_no("Pre-flight LLM failed. Continue with deterministic checks only?", auto_answer):
             return 1
         preflight_findings = required_col_findings
+        llm_enabled = False
 
     write_preflight_report(preflight_findings, PREFLIGHT_REPORT)
     errors = [f for f in preflight_findings if f.severity == "error"]
@@ -159,39 +161,49 @@ def main(auto_answer: bool | None = None) -> int:
 
     all_scenarios: list[TestScenario] = []
 
-    for plan in loaded.plans:
-        print(f"Generating scenarios for plan {plan.plan_id}...")
-        try:
-            generated = generate_single_plan_scenarios(plan, rules_by_plan[plan.plan_id], SCENARIO_PROMPT_PATH, SCENARIO_MODEL)
-            all_scenarios.extend(generated)
-        except ScenarioGenerationError as exc:
-            print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            if not prompt_yes_no("Scenario generation failed for this plan. Skip and continue?", auto_answer):
-                return 1
+    if llm_enabled:
+        for plan in loaded.plans:
+            print(f"Generating scenarios for plan {plan.plan_id}...")
+            try:
+                generated = generate_single_plan_scenarios(plan, rules_by_plan[plan.plan_id], SCENARIO_PROMPT_PATH, SCENARIO_MODEL)
+                all_scenarios.extend(generated)
+            except ScenarioGenerationError as exc:
+                print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
+                if not prompt_yes_no("Scenario generation failed for this plan. Skip and continue?", auto_answer):
+                    return 1
+                if prompt_yes_no("Disable all remaining LLM calls for this run?", auto_answer):
+                    llm_enabled = False
+                    print("LLM generation disabled for remaining steps. Continuing deterministic-only.")
+                    break
 
-    for interaction in loaded.interactions:
-        if interaction.source_plan_id == interaction.target_plan_id:
-            continue
-        source_plan = plan_by_id.get(interaction.source_plan_id)
-        target_plan = plan_by_id.get(interaction.target_plan_id)
-        if not source_plan or not target_plan:
-            continue
-        print(f"Generating scenarios for plan pair {interaction.source_plan_id}->{interaction.target_plan_id}...")
-        try:
-            generated = generate_cross_plan_scenarios(
-                source_plan,
-                rules_by_plan[source_plan.plan_id],
-                target_plan,
-                rules_by_plan[target_plan.plan_id],
-                interaction,
-                SCENARIO_PROMPT_PATH,
-                SCENARIO_MODEL,
-            )
-            all_scenarios.extend(generated)
-        except ScenarioGenerationError as exc:
-            print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            if not prompt_yes_no("Cross-plan scenario generation failed. Skip and continue?", auto_answer):
-                return 1
+    if llm_enabled:
+        for interaction in loaded.interactions:
+            if interaction.source_plan_id == interaction.target_plan_id:
+                continue
+            source_plan = plan_by_id.get(interaction.source_plan_id)
+            target_plan = plan_by_id.get(interaction.target_plan_id)
+            if not source_plan or not target_plan:
+                continue
+            print(f"Generating scenarios for plan pair {interaction.source_plan_id}->{interaction.target_plan_id}...")
+            try:
+                generated = generate_cross_plan_scenarios(
+                    source_plan,
+                    rules_by_plan[source_plan.plan_id],
+                    target_plan,
+                    rules_by_plan[target_plan.plan_id],
+                    interaction,
+                    SCENARIO_PROMPT_PATH,
+                    SCENARIO_MODEL,
+                )
+                all_scenarios.extend(generated)
+            except ScenarioGenerationError as exc:
+                print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
+                if not prompt_yes_no("Cross-plan scenario generation failed. Skip and continue?", auto_answer):
+                    return 1
+                if prompt_yes_no("Disable all remaining LLM calls for this run?", auto_answer):
+                    llm_enabled = False
+                    print("LLM generation disabled for remaining steps. Continuing deterministic-only.")
+                    break
 
     edge_scenarios: list[TestScenario] = []
     for plan in loaded.plans:
@@ -207,15 +219,22 @@ def main(auto_answer: bool | None = None) -> int:
 
     requirements = []
     total = len(all_scenarios)
-    for i, scenario in enumerate(all_scenarios, start=1):
-        print(f"Generating data requirements ({i}/{total})...")
-        try:
-            req = generate_data_requirement(scenario, loaded.plans, loaded.rules, DATA_REQ_PROMPT_PATH, DATA_REQ_MODEL)
-            requirements.append(req)
-        except DataRequirementError as exc:
-            print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            if not prompt_yes_no("Data requirement generation failed for this scenario. Skip and continue?", auto_answer):
-                return 1
+    if llm_enabled:
+        for i, scenario in enumerate(all_scenarios, start=1):
+            print(f"Generating data requirements ({i}/{total})...")
+            try:
+                req = generate_data_requirement(scenario, loaded.plans, loaded.rules, DATA_REQ_PROMPT_PATH, DATA_REQ_MODEL)
+                requirements.append(req)
+            except DataRequirementError as exc:
+                print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
+                if not prompt_yes_no("Data requirement generation failed for this scenario. Skip and continue?", auto_answer):
+                    return 1
+                if prompt_yes_no("Disable all remaining LLM calls for this run?", auto_answer):
+                    llm_enabled = False
+                    print("LLM generation disabled for remaining steps. Remaining data requirements will be skipped.")
+                    break
+    else:
+        print("Skipping data requirement generation because LLM is disabled for this run.")
 
     print("Writing output files...")
     export_scenarios(all_scenarios, SCENARIOS_CSV)
