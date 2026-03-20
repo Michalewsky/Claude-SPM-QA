@@ -1,0 +1,4 @@
+plan_id,plan_name,role_type,period_type,currency,period_start,period_end,credit_source,proration_enabled,draws_enabled,cap_enabled,accelerator_enabled,bonus_component,notes
+PLAN_A,Direct Rep Plan,rep,monthly,USD,2026-01-01,2026-12-31,territory_direct,true,true,false,true,false,Direct seller with draw and accelerator
+PLAN_B,Overlay Rep Plan,overlay,monthly,USD,2026-01-01,2026-12-31,overlay_pct,false,false,false,false,false,Overlay references PLAN_A attribution
+PLAN_C,Manager Plan,manager,quarterly,USD,2026-01-01,2026-12-31,manager_rollup,true,false,false,true,true,Manager rollup with quarterly bonus

@@ -1,0 +1,13 @@
+plan_id,rule_id,pipeline_stage,rule_category,rule_type,condition,parameters,interaction_with,stateful,state_key,notes
+PLAN_A,R_A1,credit_attribution,credit,territory_direct,txn_in_assigned_territory,,R_B1,false,,Direct territory ownership
+PLAN_A,R_A2,aggregation,proration,business_day_linear,payee_active_partial_month,method=business_day_linear,,false,,Proration by business days
+PLAN_A,R_A3,post_calc,draw,flat_guarantee,payout_below_floor,months=3|floor=2000,,true,draw_balance,Temporary draw guarantee
+PLAN_A,R_A4,attainment,quota,monthly_quota,always,frequency=monthly|quota=100000,,false,,Monthly quota target
+PLAN_A,R_A5,rate_lookup,accelerator,stepped_accelerator,attainment_gte_100,base=1.0|tier1=110:1.25|tier2=125:1.5,,false,,Stepped accelerator tiers
+PLAN_B,R_B1,credit_attribution,credit,overlay_pct,linked_plan_credit_exists,pct=0.10|ref_plan=PLAN_A,,false,,Overlay gets percent of source credit
+PLAN_B,R_B2,attainment,quota,monthly_quota,always,frequency=monthly|quota=150000,,false,,Monthly quota for overlay
+PLAN_B,R_B3,rate_lookup,rate_table,tiered_rate,attainment_gte_0,tier1=0:0.03|tier2=100:0.05|tier3=120:0.07,,false,,Overlay tier table differs from PLAN_A
+PLAN_C,R_C1,credit_attribution,hierarchy,manager_rollup,team_transaction_exists,path=region>territory>rep,,false,,Manager rollup path
+PLAN_C,R_C2,aggregation,proration,business_day_linear,payee_active_partial_month,method=business_day_linear,,false,,Manager proration
+PLAN_C,R_C3,rate_lookup,accelerator,stepped_accelerator,attainment_gte_100,base=1.0|tier1=110:1.2|tier2=125:1.4,,false,,Manager accelerator without cap
+PLAN_C,R_C4,bonus,bonus,quarterly_flat_bonus,team_goal_met,trigger=team_goal_met|amount=5000,,false,,Quarterly bonus payout
