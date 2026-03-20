@@ -44,12 +44,15 @@ EDGE_REQUIRED_COLUMNS = {
 }
 
 
-def prompt_choice(prompt: str, choices: set[str]) -> str:
+def prompt_yes_no(prompt: str) -> bool:
+    """Return True for yes (y), False for no (n)."""
     while True:
-        response = input(prompt).strip().lower()
-        if response in choices:
-            return response
-        print(f"Invalid choice. Choose one of: {', '.join(sorted(choices))}")
+        response = input(f"{prompt} (y/n): ").strip().lower()
+        if response in {"y", "yes"}:
+            return True
+        if response in {"n", "no"}:
+            return False
+        print("Invalid choice. Please enter y or n.")
 
 
 def validate_required_columns() -> list[PreflightFinding]:
@@ -120,8 +123,7 @@ def main() -> int:
         )
     except PreflightLLMError as exc:
         print(str(exc))
-        decision = prompt_choice("Continue with deterministic checks only or abort? (continue/abort): ", {"continue", "abort"})
-        if decision == "abort":
+        if not prompt_yes_no("Pre-flight LLM failed. Continue with deterministic checks only?"):
             return 1
         preflight_findings = required_col_findings
 
@@ -133,8 +135,7 @@ def main() -> int:
     if errors:
         print("ERROR findings detected. Please review outputs/preflight_report.txt")
 
-    proceed = prompt_choice("Proceed? (yes/no): ", {"yes", "no"})
-    if proceed == "no":
+    if not prompt_yes_no("Proceed"):
         print("Exiting cleanly per user request.")
         return 0
 
@@ -152,8 +153,7 @@ def main() -> int:
             all_scenarios.extend(generated)
         except ScenarioGenerationError as exc:
             print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            decision = prompt_choice("Skip this plan and continue, or abort? (skip/abort): ", {"skip", "abort"})
-            if decision == "abort":
+            if not prompt_yes_no("Scenario generation failed for this plan. Skip and continue?"):
                 return 1
 
     for interaction in loaded.interactions:
@@ -177,8 +177,7 @@ def main() -> int:
             all_scenarios.extend(generated)
         except ScenarioGenerationError as exc:
             print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            decision = prompt_choice("Skip this plan interaction and continue, or abort? (skip/abort): ", {"skip", "abort"})
-            if decision == "abort":
+            if not prompt_yes_no("Cross-plan scenario generation failed. Skip and continue?"):
                 return 1
 
     edge_scenarios: list[TestScenario] = []
@@ -202,8 +201,7 @@ def main() -> int:
             requirements.append(req)
         except DataRequirementError as exc:
             print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            decision = prompt_choice("Skip this scenario and continue, or abort? (skip/abort): ", {"skip", "abort"})
-            if decision == "abort":
+            if not prompt_yes_no("Data requirement generation failed for this scenario. Skip and continue?"):
                 return 1
 
     print("Writing output files...")
