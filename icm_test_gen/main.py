@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from collections import Counter, defaultdict
 
@@ -44,8 +45,12 @@ EDGE_REQUIRED_COLUMNS = {
 }
 
 
-def prompt_yes_no(prompt: str) -> bool:
+def prompt_yes_no(prompt: str, auto_answer: bool | None = None) -> bool:
     """Return True for yes (y), False for no (n)."""
+    if auto_answer is not None:
+        choice = "y" if auto_answer else "n"
+        print(f"{prompt} (y/n): {choice} [auto]")
+        return auto_answer
     while True:
         response = input(f"{prompt} (y/n): ").strip().lower()
         if response in {"y", "yes"}:
@@ -53,6 +58,14 @@ def prompt_yes_no(prompt: str) -> bool:
         if response in {"n", "no"}:
             return False
         print("Invalid choice. Please enter y or n.")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="ICM Test Case Generator")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--yes", action="store_true", help="Auto-answer yes to all approval prompts.")
+    mode_group.add_argument("--no", action="store_true", help="Auto-answer no to all approval prompts.")
+    return parser.parse_args()
 
 
 def validate_required_columns() -> list[PreflightFinding]:
@@ -92,7 +105,7 @@ def assign_unique_scenario_ids(scenarios: list[TestScenario]) -> None:
         global_index += 1
 
 
-def main() -> int:
+def main(auto_answer: bool | None = None) -> int:
     print("Loading input files...")
     try:
         loaded = load_inputs(PLANS_CSV, RULES_CSV, RULE_INTERACTIONS_CSV, EDGE_CASES_CSV)
@@ -123,7 +136,7 @@ def main() -> int:
         )
     except PreflightLLMError as exc:
         print(str(exc))
-        if not prompt_yes_no("Pre-flight LLM failed. Continue with deterministic checks only?"):
+        if not prompt_yes_no("Pre-flight LLM failed. Continue with deterministic checks only?", auto_answer):
             return 1
         preflight_findings = required_col_findings
 
@@ -135,7 +148,7 @@ def main() -> int:
     if errors:
         print("ERROR findings detected. Please review outputs/preflight_report.txt")
 
-    if not prompt_yes_no("Proceed"):
+    if not prompt_yes_no("Proceed", auto_answer):
         print("Exiting cleanly per user request.")
         return 0
 
@@ -153,7 +166,7 @@ def main() -> int:
             all_scenarios.extend(generated)
         except ScenarioGenerationError as exc:
             print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            if not prompt_yes_no("Scenario generation failed for this plan. Skip and continue?"):
+            if not prompt_yes_no("Scenario generation failed for this plan. Skip and continue?", auto_answer):
                 return 1
 
     for interaction in loaded.interactions:
@@ -177,7 +190,7 @@ def main() -> int:
             all_scenarios.extend(generated)
         except ScenarioGenerationError as exc:
             print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            if not prompt_yes_no("Cross-plan scenario generation failed. Skip and continue?"):
+            if not prompt_yes_no("Cross-plan scenario generation failed. Skip and continue?", auto_answer):
                 return 1
 
     edge_scenarios: list[TestScenario] = []
@@ -201,7 +214,7 @@ def main() -> int:
             requirements.append(req)
         except DataRequirementError as exc:
             print(f"{exc} LLM may have returned a refusal/partial/invalid response.")
-            if not prompt_yes_no("Data requirement generation failed for this scenario. Skip and continue?"):
+            if not prompt_yes_no("Data requirement generation failed for this scenario. Skip and continue?", auto_answer):
                 return 1
 
     print("Writing output files...")
@@ -220,4 +233,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    args = parse_args()
+    auto_answer = True if args.yes else False if args.no else None
+    sys.exit(main(auto_answer=auto_answer))
